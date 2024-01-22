@@ -68,6 +68,8 @@ nft: public(immutable(ERC721))
 topBid: public(HashMap[uint256, Bid])
 auction_ends: public(HashMap[uint256, uint256])
 
+auction_duration: public(uint256)
+
 struct Bid:
   bidder: address
   bid: uint256
@@ -78,10 +80,13 @@ def __init__(_token: ERC20, _nft: ERC721):
   nft = _nft
   self._transfer_ownership(msg.sender)
 
+  self.auction_duration = 86400 * 5
+
 @external
 def start(lot: uint256):
-  nft.transferFrom(self, msg.sender, lot)
+  nft.transferFrom(msg.sender, self, lot)
 
+  self.auction_ends[lot] = block.timestamp + self.auction_duration
   self.topBid[lot] = Bid({
     bidder: empty(address),
     # 500 Tokens is the starting bid
@@ -90,15 +95,16 @@ def start(lot: uint256):
 
 @external
 def bid(bid: uint256, lot: uint256):
-  assert bid < (self.topBid[lot].bid * 105) / 100, "LO BID"
+  assert bid > (self.topBid[lot].bid * 105) / 100, "LO BID"
   max_time: uint256 = self.auction_ends[lot]
   assert block.timestamp < max_time, "OVER"
   if (max_time - block.timestamp) < 3600:
     self.auction_ends[lot] += 3600
   
+  bid_token.transferFrom(msg.sender, self, bid)
+  
   if self.topBid[lot].bidder != empty(address):
-    bid_token.transferFrom(msg.sender, self, bid)
-  bid_token.transfer(self.topBid[lot].bidder, self.topBid[lot].bid)
+    bid_token.transfer(self.topBid[lot].bidder, self.topBid[lot].bid)
 
   self.topBid[lot] = Bid({
     bidder: msg.sender,
