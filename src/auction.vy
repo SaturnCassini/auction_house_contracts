@@ -70,6 +70,8 @@ auction_ends: public(HashMap[uint256, uint256])
 
 auction_duration: public(uint256)
 
+profit: public(uint256)
+
 struct Bid:
   bidder: address
   bid: uint256
@@ -84,6 +86,11 @@ def __init__(_token: ERC20, _nft: ERC721):
 
 @external
 def start(lot: uint256):
+  """
+  @dev Starts an auction for a lot.
+  @param lot The tokenID of the nft to start an auction for.
+  """
+  assert msg.sender == self.owner, "NOT OWNER"
   nft.transferFrom(msg.sender, self, lot)
 
   self.auction_ends[lot] = block.timestamp + self.auction_duration
@@ -95,6 +102,11 @@ def start(lot: uint256):
 
 @external
 def bid(bid: uint256, lot: uint256):
+  """
+  @dev Places a bid for a lot.
+  @param bid The amount of ERC20 tokens to bid.
+  @param lot The ID of the lot to bid on.
+  """
   assert bid > (self.topBid[lot].bid * 105) / 100, "LO BID"
   max_time: uint256 = self.auction_ends[lot]
   assert block.timestamp < max_time, "OVER"
@@ -114,6 +126,20 @@ def bid(bid: uint256, lot: uint256):
 
 @external
 def end(lot: uint256):
+  """
+  @dev Ends the auction and transfers the NFT to the highest bidder.
+  @param lot The ID of the lot to close the auction for.
+  """
   assert block.timestamp >= self.auction_ends[lot]
   winningBid: Bid = self.topBid[lot]
+  self.profit += winningBid.bid
   nft.transferFrom(self, winningBid.bidder, lot)
+
+@external
+def withdraw_proceeds(benefactor: address):
+  """
+  @dev Withdraws the proceeds from the auction.
+  """
+  assert msg.sender == self.owner
+  bid_token.transfer(benefactor, self.profit)
+  self.profit = 0
