@@ -62,13 +62,29 @@ def _transfer_ownership(new_owner: address):
 #                  Auction House Logic                  #
 # ///////////////////////////////////////////////////// #
 
+event AuctionStarted:
+  lot: indexed(uint256)
+  patron: indexed(address)
+
+event AuctionEnded:
+  lot: indexed(uint256)
+  winner: indexed(address)
+
+event BidSubmitted:
+  lot: indexed(uint256)
+  bidder: indexed(address)
+  bid: uint256
+
 bid_token: public(immutable(ERC20))
 nft: public(immutable(ERC721))
 
 topBid: public(HashMap[uint256, Bid])
+patron: public(HashMap[uint256, address])
 auction_ends: public(HashMap[uint256, uint256])
 
 auction_duration: public(uint256)
+
+fee: public(uint256)
 
 profit: public(uint256)
 
@@ -77,15 +93,16 @@ struct Bid:
   bid: uint256
 
 @external
-def __init__(_token: ERC20, _nft: ERC721):
+def __init__(_token: ERC20, _nft: ERC721, _fee: uint256):
   bid_token = _token
   nft = _nft
-  self._transfer_ownership(msg.sender)
 
+  self._transfer_ownership(msg.sender)
+  self.fee = _fee
   self.auction_duration = 86400 * 5
 
 @external
-def start(lot: uint256):
+def start(lot: uint256, patron: address):
   """
   @dev Starts an auction for a lot.
   @param lot The tokenID of the nft to start an auction for.
@@ -94,11 +111,15 @@ def start(lot: uint256):
   nft.transferFrom(msg.sender, self, lot)
 
   self.auction_ends[lot] = block.timestamp + self.auction_duration
+
+  self.patron[lot] = patron
   self.topBid[lot] = Bid({
     bidder: empty(address),
     # 500 Tokens is the starting bid
     bid: 500 * 10 ** 18
   })
+
+  log AuctionStarted(lot, patron)
 
 @external
 def bid(bid: uint256, lot: uint256):
@@ -109,7 +130,7 @@ def bid(bid: uint256, lot: uint256):
   """
   assert bid > (self.topBid[lot].bid * 105) / 100, "LO BID"
   max_time: uint256 = self.auction_ends[lot]
-  assert block.timestamp < max_time, "OVER"
+  assert block.timestamp < max_time, "OVER" # FIX Comment
   if (max_time - block.timestamp) < 3600:
     self.auction_ends[lot] += 3600
   
@@ -123,6 +144,8 @@ def bid(bid: uint256, lot: uint256):
     bid: bid
   })
 
+  log BidSubmitted(lot, msg.sender, bid)
+
 
 @external
 def end(lot: uint256):
@@ -132,8 +155,15 @@ def end(lot: uint256):
   """
   assert block.timestamp >= self.auction_ends[lot]
   winningBid: Bid = self.topBid[lot]
-  self.profit += winningBid.bid
+
+  fee: uint256 = (winningBid.bid * self.fee) / 100
+  patron_proceeds: uint256 = winningBid.bid - fee
+  self.profit += fee
+
+  bid_token.transfer(self.patron[lot], patron_proceeds)
   nft.transferFrom(self, winningBid.bidder, lot)
+
+  log AuctionEnded(lot, winningBid.bidder)
 
 @external
 def withdraw_proceeds(benefactor: address):
