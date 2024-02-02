@@ -19,10 +19,10 @@ def token(account):
 @pytest.fixture(scope="session")
 def nft(account):
     with boa.env.prank(account):
-        return boa.load('src/nft.vy', "ENNEFFTEE", "TEST", "https://bophades.nutz", "ENEFFTEE", "1")
+        return boa.load('src/nft.vy', "ENNEFFTEE", "TEST", "https://test.url", "ENEFFTEE", "1")
 
 @pytest.fixture(scope="session")
 def auction_house(account, token, nft):
     with boa.env.prank(account):
-        return boa.load('src/auction.vy', token.address, nft.address)
+        return boa.load('src/auction.vy', token.address, nft.address, 50)
 
