@@ -2,7 +2,11 @@
 
 A simple auction house implemented in pure Vyper, as well as a standard ERC721 which can be auctioned off in exchange for a specific ERC20 token
 
-## NFT
+<p align="center">
+  <img src="./Auctionhouse.jpeg" height="150" />
+</p>
+
+## NFT Contract
 
 The NFT is a simple fork of snekmate's ERC721, for the primary reason that is well-maintained, tested, and built
 
@@ -13,7 +17,7 @@ def safe_mint(owner: address, uri: String[432]):
 
 The function `safe_mint` will allow you to mint a token to yourself (putting your own address as owner) with a specific uri, which should point to the gif/png you prefer for the NFT itself.
 
-## Main Functions of the AuctionHouse
+## Main Functions of the Auction House Contract
 Every auction is understood in terms of a `lot`, which is the `tokenId` of the NFT which is up for sale. The owner of the auction house is the address who deployed it, but this can be changed at any time. They specify the NFT and ERC20 token address that will be linked to the auction house at the time of deployment.
 
 ```py
