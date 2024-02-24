@@ -1,7 +1,7 @@
 # @version 0.3.10
 
 """
-@title Cassini's Auction House
+@title Saturn Series's Auction House
 @license GNU Affero General Public License v3.0
 @notice Simple NFT Auction Implemented in Vyper
 """
@@ -83,7 +83,6 @@ fee: public(uint256)
 
 profit: public(uint256)
 
-
 struct Bid:
         bidder: address
         bid: uint256
@@ -112,7 +111,7 @@ def __init__(_token: ERC20, _nft: ERC721, _fee: uint256):
     """
     @param _token The address of the ERC20 token to use for the auction.
     @param _nft The address of the ERC721 token to auction.
-    @param _fee The percentage of the winning bid to take as a fee for the dao, as 
+    @param _fee The percentage of the winning bid to take as a fee for the dao 
     """
     bid_token = _token
     nft = _nft
@@ -152,9 +151,9 @@ def bid(bid: uint256, lot: uint256):
     @param bid The amount of ERC20 tokens to bid.
     @param lot The ID of the lot to bid on.
     """
-    assert bid > (self.topBid[lot].bid * 105) / 100, "LO BID"
+    assert bid > (self.topBid[lot].bid * 105) / 100, "LOW BID"
     max_time: uint256 = self.auction_ends[lot]
-    assert block.timestamp < max_time, "OVER"  # FIX Comment
+    assert block.timestamp < max_time, "AUCTION FINISHED"
     if (max_time - block.timestamp) < 3600:
         self.auction_ends[lot] += 3600
 
@@ -190,7 +189,7 @@ def end(lot: uint256):
 @external
 def withdraw_proceeds(benefactor: address):
     """
-    @dev Withdraws the proceeds from the auction.
+    @dev Withdraws the fees generated from the auctions.
     """
     assert msg.sender == self.owner
     bid_token.transfer(benefactor, self.profit)
