@@ -19,13 +19,15 @@
         - `is_minter` (`external` `view` function),
         - `safe_mint` (`external` function),
         - `set_minter` (`external` function),
+        - `change_ownership_and_minter` (`external` function),
+        - `renounce_ownership_and_minter` (`external` function),
         - `permit` (`external` function),
         - `nonces` (`external` `view` function),
         - `DOMAIN_SEPARATOR` (`external` `view` function),
         - `eip712Domain` (`external` `view` function),
         - `owner` (`external` `view` function),
-        - `transfer_ownership` (`external` function),
-        - `renounce_ownership` (`external` function),
+        - `_transfer_ownership` (`internal` function),
+        - `_renounce_ownership` (`internal` function),
         - `_check_on_erc721_received` (`internal` function),
         - `_before_token_transfer` (`internal` function),
         - `_after_token_transfer` (`internal` function).
@@ -47,7 +49,6 @@
 
 interface IERC721Receiver:
     def onERC721Received(operator: address, _from: address, tokenId: uint256, data: Bytes[1024]) -> bytes4: nonpayable
-
 
 # @dev Stores the ERC-165 interface identifier for each
 # imported interface. The ERC-165 interface identifier
@@ -169,12 +170,12 @@ _all_tokens_index: HashMap[uint256, uint256]
 # @dev Mapping from token ID to token URI.
 # @notice Since the Vyper design requires
 # strings of fixed size, we arbitrarily set
-# the maximum length for `_token_uris` to 432
+# the maximum length for `_token_uris` to 176
 # characters. Since we have set the maximum
 # length for `_BASE_URI` to 80 characters,
 # which implies a maximum character length
-# for `tokenURI` of 512.
-_token_uris: HashMap[uint256, String[432]]
+# for `tokenURI` of 256.
+_token_uris: HashMap[uint256, String[176]]
 
 
 # @dev An `uint256` counter variable that sets
@@ -270,8 +271,7 @@ def __init__(name_: String[25], symbol_: String[5], base_uri_: String[80], name_
     _BASE_URI = base_uri_
 
     self._transfer_ownership(msg.sender)
-    self.is_minter[msg.sender] = True
-    log RoleMinterChanged(msg.sender, True)
+    self._change_minter_status(msg.sender, True)
 
     _NAME = name_eip712_
     _VERSION = version_eip712_
@@ -454,17 +454,17 @@ def safeTransferFrom(owner: address, to: address, token_id: uint256, data: Bytes
 
 @external
 @view
-def tokenURI(token_id: uint256) -> String[512]:
+def tokenURI(token_id: uint256) -> String[256]:
     """
     @dev Returns the Uniform Resource Identifier (URI)
          for `token_id` token.
     @notice Throws if `token_id` is not a valid ERC-721 token.  
     @param token_id The 32-byte identifier of the token.
-    @return String The maximum 512-character user-readable
+    @return String The maximum 256-character user-readable
             string token URI of the `token_id` token.
     """
     self._require_minted(token_id)
-    token_uri: String[432] = self._token_uris[token_id]
+    token_uri: String[176] = self._token_uris[token_id]
 
     base_uri_length: uint256 = len(_BASE_URI)
     # If there is no base URI, return the token URI.
@@ -542,7 +542,7 @@ def burn(token_id: uint256):
 
 
 @external
-def safe_mint(owner: address, uri: String[432]):
+def safe_mint(owner: address, uri: String[176]) -> uint256:
     """
     @dev Safely mints `token_id` and transfers it to `owner`.
     @notice Only authorised minters can access this function.
@@ -550,8 +550,9 @@ def safe_mint(owner: address, uri: String[432]):
             Also, new tokens will be automatically assigned
             an incremental ID.
     @param owner The 20-byte owner address.
-    @param uri The maximum 432-character user-readable
+    @param uri The maximum 176-character user-readable
            string URI for computing `tokenURI`.
+    @return uint256 The ID of the newly minted token.
     """
     assert self.is_minter[msg.sender], "AccessControl: access is denied"
     # New tokens will be automatically assigned an incremental ID.
@@ -566,6 +567,17 @@ def safe_mint(owner: address, uri: String[432]):
     # no longer even theoretically possible.
     self._safe_mint(owner, token_id, b"")
     self._set_token_uri(token_id, uri)
+    return token_id
+
+@internal 
+def _change_minter_status(minter: address, status: bool):
+    """
+    @dev Changes the minter status and logs the event.
+    @param minter The address whose minter status is being changed.
+    @param status The new minter status to set.
+    """
+    self.is_minter[minter] = status
+    log RoleMinterChanged(minter, status)
 
 
 @external
@@ -658,55 +670,6 @@ def eip712Domain() -> (bytes1, String[50], String[20], uint256, address, bytes32
     """
     # Note that `\x0f` equals `01111`.
     return (convert(b"\x0f", bytes1), _NAME, _VERSION, chain.id, self, empty(bytes32), empty(DynArray[uint256, 128]))
-
-
-@external
-def transfer_ownership(new_owner: address):
-    """
-    @dev Transfers the ownership of the contract
-         to a new account `new_owner`.
-    @notice Note that this function can only be
-            called by the current `owner`. Also,
-            the `new_owner` cannot be the zero address.
-
-            WARNING: The ownership transfer also removes
-            the previous owner's minter role and assigns
-            the minter role to `new_owner` accordingly.
-    @param new_owner The 20-byte address of the new owner.
-    """
-    self._check_owner()
-    assert new_owner != empty(address), "Ownable: new owner is the zero address"
-
-    self.is_minter[msg.sender] = False
-    log RoleMinterChanged(msg.sender, False)
-
-    self._transfer_ownership(new_owner)
-    self.is_minter[new_owner] = True
-    log RoleMinterChanged(new_owner, True)
-
-
-@external
-def renounce_ownership():
-    """
-    @dev Leaves the contract without an owner.
-    @notice Renouncing ownership will leave the
-            contract without an owner, thereby
-            removing any functionality that is
-            only available to the owner. Note
-            that the `owner` is also removed from
-            the list of allowed minters.
-
-            WARNING: All other existing `minter`
-            addresses will still be able to create
-            new tokens. Consider removing all non-owner
-            minter addresses first via `set_minter`
-            before calling `renounce_ownership`.
-    """
-    self._check_owner()
-    self.is_minter[msg.sender] = False
-    log RoleMinterChanged(msg.sender, False)
-    self._transfer_ownership(empty(address))
-
 
 @internal
 @view
@@ -840,6 +803,7 @@ def _safe_mint(owner: address, token_id: uint256, data: Bytes[1_024]):
     """
     self._mint(owner, token_id)
     assert self._check_on_erc721_received(empty(address), owner, token_id, data), "ERC721: transfer to non-ERC721Receiver implementer"
+    
 
 
 @internal
@@ -943,12 +907,12 @@ def _transfer(owner: address, to: address, token_id: uint256):
 
 
 @internal
-def _set_token_uri(token_id: uint256, token_uri: String[432]):
+def _set_token_uri(token_id: uint256, token_uri: String[176]):
     """
     @dev Sets `token_uri` as the token URI of `token_id`.
     @notice Note that `token_id` must exist.
     @param token_id The 32-byte identifier of the token.
-    @param token_uri The maximum 432-character user-readable
+    @param token_uri The maximum 176-character user-readable
            string URI for computing `tokenURI`.
     """
     assert self._exists(token_id), "ERC721URIStorage: URI set of nonexistent token"
@@ -1178,6 +1142,45 @@ def _check_owner():
     assert msg.sender == self.owner, "Ownable: caller is not the owner"
 
 
+@external
+def change_ownership_and_minter(new_owner: address):
+    """
+    @dev Transfers the ownership of the contract to a new account `new_owner` and
+         updates the minter status for both old and new owner.
+    @notice Note that this function can only be called by the current `owner`. Also,
+            the `new_owner` cannot be the zero address. It ensures the transfer of
+            ownership is clear about the side-effects of also transferring minter roles.
+    @param new_owner The 20-byte address of the new owner.
+    """
+    self._check_owner()
+    assert new_owner != empty(address), "Ownable: new owner is the zero address"
+
+    # Revoke minter status of current owner and update event log
+    self._change_minter_status(msg.sender, False)
+
+    # Transfer ownership and assign minter status to new owner
+    self._transfer_ownership(new_owner)
+    self._change_minter_status(new_owner, True)
+
+@external
+def renounce_ownership_and_minter():
+    """
+    @dev Leaves the contract without an owner and updates the minter status.
+    @notice Renouncing ownership will leave the contract without an owner,
+            thereby removing any functionality that is only available to the owner.
+            This function also revokes the minter role of the renouncing owner.
+            Note that all other existing `minter` addresses will still be able to
+            create new tokens. Consider removing all non-owner minter addresses first
+            via `set_minter` before calling this function.
+    """
+    self._check_owner()
+
+    # Revoke minter status of current owner and update event log
+    self._change_minter_status(msg.sender, False)
+
+    # Officially renounce ownership to no address
+    self._transfer_ownership(empty(address))
+
 @internal
 def _transfer_ownership(new_owner: address):
     """
@@ -1262,4 +1265,3 @@ def _try_recover_vrs(hash: bytes32, v: uint256, r: uint256, s: uint256) -> addre
     assert signer != empty(address), "ECDSA: invalid signature"
 
     return signer
-
